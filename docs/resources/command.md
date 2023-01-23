@@ -68,7 +68,7 @@ Required:
 
 Targets specify what instance IDs or tags to apply the document to and has these keys:
 
-- `key` (String) - Either InstanceIds or tag:Tag Name to specify an EC2 tag.
+- `key` (String) - Either `InstanceIds` or `tag:Tag Name` to specify an EC2 tag.
 - `values` (List of String) - A list of instance IDs or tag values.
 
 ### Nested Schema for `output_location`

@@ -2,37 +2,25 @@ terraform {
   required_providers {
     ssm = {
       source  = "local/providers/ssm"
-      version = "1.0.0"
-      # Other parameters...
+      version = "0.1.1"
     }
   }
 }
 
 resource "ssm_command" "test" {
-  document_name = "arcgis-enterprise-bootstrap"
+  document_name = "AWS-InstallMissingWindowsUpdates"
   parameters {
-    name   = "SiteId"
-    values = ["arcgis-enterprise"]
+    name   = "UpdateLevel"
+    values = ["Important"]
   }
   targets {
-    key    = "tag:ArcGISSiteId"
-    values = ["arcgis-enterprise"]
+    key    = "InstanceIds"
+    values = ["i-xxxxxxxxxxxxxxxxx"]
   }
-  targets {
-    key    = "tag:ArcGISDeploymentId"
-    values = ["arcgis-enterprise-base"]
-  }
-  targets {
-    key    = "tag:ArcGISMachineRole"
-    values = ["primary", "standby"]
-  }
-
-  comment           = "Runs Chef client with a specific role JSON file. edited"
+  comment           = "Install Microsoft Windows updates."
   execution_timeout = 600
-
   output_location {
-    s3_bucket_name = "arcgis-enterprise-685115441969-us-west-2"
-    s3_key_prefix  = "arcgis-enterprise-base"
+    s3_bucket_name = "mybycket"
+    s3_key_prefix  = "updates"
   }
 }
-

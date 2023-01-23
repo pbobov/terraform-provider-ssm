@@ -2,8 +2,10 @@ package awstools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -14,6 +16,13 @@ import (
 	ssmtypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
 	log "github.com/hashicorp/terraform-plugin-log/tflog"
 )
+
+// EC2 filter names
+var ec2FilterInstanceId = "instance-id"
+var ec2FilterInstanceStateName = "instance-state-name"
+
+// SSM target names
+var ssmTargetInstanceIds = "InstanceIds"
 
 var sendTimeout int32 = 600
 
@@ -34,30 +43,30 @@ func NewAwsClients(ctx context.Context) (*AwsClients, error) {
 		return nil, err
 	}
 
-	aws := AwsClients{ctx: ctx, ec2Client: ec2.NewFromConfig(cfg), ssmClient: ssm.NewFromConfig(cfg), s3Client: s3.NewFromConfig(cfg)}
+	clients := AwsClients{ctx: ctx, ec2Client: ec2.NewFromConfig(cfg), ssmClient: ssm.NewFromConfig(cfg), s3Client: s3.NewFromConfig(cfg)}
 
-	return &aws, nil
+	return &clients, nil
 }
 
 // Wait until the target EC2 instances status is online
-func (aws AwsClients) waitForTargetInstances(ec2Filters []ec2types.Filter, ssmFilters []ssmtypes.InstanceInformationStringFilter, waitTimeout int) bool {
+func (clients AwsClients) waitForTargetInstances(ec2Filters []ec2types.Filter, ssmFilters []ssmtypes.InstanceInformationStringFilter, waitTimeout int) error {
 	for i := 0; i < waitTimeout/sleepTime; i++ {
-		ec2Instances, err := aws.ec2Client.DescribeInstances(aws.ctx, &ec2.DescribeInstancesInput{
+		ec2Instances, err := clients.ec2Client.DescribeInstances(clients.ctx, &ec2.DescribeInstancesInput{
 			Filters: ec2Filters,
 		})
 
 		if err != nil {
-			log.Error(aws.ctx, err.Error())
-			return false
+			log.Error(clients.ctx, err.Error())
+			return err
 		}
 
-		ssmInstances, err := aws.ssmClient.DescribeInstanceInformation(aws.ctx, &ssm.DescribeInstanceInformationInput{
+		ssmInstances, err := clients.ssmClient.DescribeInstanceInformation(clients.ctx, &ssm.DescribeInstanceInformationInput{
 			Filters: ssmFilters,
 		})
 
 		if err != nil {
-			log.Error(aws.ctx, err.Error())
-			return false
+			log.Error(clients.ctx, err.Error())
+			return err
 		}
 
 		if len(ssmInstances.InstanceInformationList) > 0 {
@@ -75,31 +84,31 @@ func (aws AwsClients) waitForTargetInstances(ec2Filters []ec2types.Filter, ssmFi
 				}
 			}
 
-			log.Info(aws.ctx, fmt.Sprintf("%d of %d target instances are online.", onlineInstanceCount, ec2InstanceCount))
+			log.Info(clients.ctx, fmt.Sprintf("%d of %d target instances are online.", onlineInstanceCount, ec2InstanceCount))
 
 			if onlineInstanceCount == ec2InstanceCount {
-				return true
+				return nil
 			}
 		}
 
 		time.Sleep(sleepTime * time.Second)
 	}
 
-	log.Info(aws.ctx, "Target instances are not online.")
+	log.Error(clients.ctx, "Target instances are not online.")
 
-	return false
+	return errors.New("Target instances are not online.")
 }
 
 // Wait for the command invocations to complete
-func (aws AwsClients) waitForCommandInvocations(commandId string, timeout int) ssmtypes.CommandInvocationStatus {
+func (clients AwsClients) waitForCommandInvocations(commandId string, timeout int) error {
 	for i := 0; i < timeout/sleepTime; i++ {
-		output, err := aws.ssmClient.ListCommandInvocations(aws.ctx, &ssm.ListCommandInvocationsInput{
+		output, err := clients.ssmClient.ListCommandInvocations(clients.ctx, &ssm.ListCommandInvocationsInput{
 			CommandId: &commandId,
 		})
 
 		if err != nil {
-			log.Error(aws.ctx, err.Error())
-			return ssmtypes.CommandInvocationStatusFailed
+			log.Error(clients.ctx, err.Error())
+			return err
 		}
 
 		if len(output.CommandInvocations) == 0 {
@@ -113,56 +122,79 @@ func (aws AwsClients) waitForCommandInvocations(commandId string, timeout int) s
 			if invocation.Status == "Pending" || invocation.Status == "InProgress" {
 				pendingExecutionsCount += 1
 			} else if invocation.Status == "Cancelled" || invocation.Status == "TimedOut" || invocation.Status == "Failed" {
-				log.Info(aws.ctx, fmt.Sprintf("Command %s invocation %s on instance %s.",
+				log.Info(clients.ctx, fmt.Sprintf("Command %s invocation %s on instance %s.",
 					commandId, invocation.Status, *invocation.InstanceId))
-				return invocation.Status
+				return nil
 			}
 		}
 
 		if pendingExecutionsCount == 0 {
-			return ssmtypes.CommandInvocationStatusSuccess
+			return nil
 		}
 
 		time.Sleep(sleepTime * time.Second)
 	}
 
-	log.Error(aws.ctx, "Command invocations timed out.")
+	log.Error(clients.ctx, "Command invocations timed out.")
 
-	return ssmtypes.CommandInvocationStatusTimedOut
+	return errors.New("Command invocations timed out.")
 }
 
 // Retrieves from S3 and prints outputs of the command invocations.
-func (aws AwsClients) printCommandOutput(prefix string, commandId string, s3Bucket string) {
+func (clients AwsClients) printCommandOutput(prefix string, commandId string, s3Bucket string) error {
+	location, err := clients.s3Client.GetBucketLocation(clients.ctx, &s3.GetBucketLocationInput{
+		Bucket: &s3Bucket,
+	})
+
+	if err != nil {
+		log.Error(clients.ctx, err.Error())
+		return err
+	}
+
+	// Create S3 service client with a specific Region.
+	cfg, err := config.LoadDefaultConfig(clients.ctx)
+
+	if err != nil {
+		log.Error(clients.ctx, err.Error())
+		return err
+	}
+
+	cfg.Region = string(location.LocationConstraint)
+	s3BucketClient := s3.NewFromConfig(cfg)
+
 	keyPrefix := prefix + "/" + commandId
 
-	objects, err := aws.s3Client.ListObjectsV2(aws.ctx, &s3.ListObjectsV2Input{
-		Bucket:  &s3Bucket,
+	objects, err := s3BucketClient.ListObjectsV2(clients.ctx, &s3.ListObjectsV2Input{
+		Bucket: &s3Bucket,
+
 		MaxKeys: 1000,
 		Prefix:  &keyPrefix,
 	})
 
 	if err != nil {
-		log.Error(aws.ctx, err.Error())
-		return
+		log.Error(clients.ctx, err.Error())
+		return err
 	}
 
 	if objects.Contents != nil {
 		for _, key := range objects.Contents {
-			object, err := aws.s3Client.GetObject(aws.ctx, &s3.GetObjectInput{
+			object, err := s3BucketClient.GetObject(clients.ctx, &s3.GetObjectInput{
 				Bucket: &s3Bucket,
 				Key:    key.Key,
 			})
 
 			if err != nil {
-				log.Error(aws.ctx, err.Error())
+				log.Error(clients.ctx, err.Error())
 			} else {
 				bytes, err := io.ReadAll(object.Body)
 				if err == nil {
-					log.Info(aws.ctx, fmt.Sprintf("\n*** %s ***\n%s", *key.Key, string(bytes)))
+					log.Info(clients.ctx, fmt.Sprintf("\n*** %s ***\n%s", *key.Key, string(bytes)))
 				}
 			}
 		}
 	}
+
+	return nil
 }
 
 // Wait until the target EC2 instances status is online.
@@ -174,14 +206,23 @@ func (aws AwsClients) RunCommand(documentName string, parameters map[string][]st
 	var ssmFilters []ssmtypes.InstanceInformationStringFilter
 
 	for _, target := range ssmTargets {
-		ec2Filters = append(ec2Filters, ec2types.Filter{Name: target.Key, Values: target.Values})
+		ec2FilterName := target.Key
+		if strings.EqualFold(*target.Key, ssmTargetInstanceIds) {
+			ec2FilterName = &ec2FilterInstanceId
+		}
+
+		ec2Filters = append(ec2Filters, ec2types.Filter{Name: ec2FilterName, Values: target.Values})
 		ssmFilters = append(ssmFilters, ssmtypes.InstanceInformationStringFilter{Key: target.Key, Values: target.Values})
 	}
 
-	instanceStateName := "instance-state-name"
-	ec2Filters = append(ec2Filters, ec2types.Filter{Name: &instanceStateName, Values: []string{"pending", "running"}})
+	ec2Filters = append(ec2Filters, ec2types.Filter{Name: &ec2FilterInstanceStateName, Values: []string{"pending", "running"}})
 
-	aws.waitForTargetInstances(ec2Filters, ssmFilters, waitTimeout)
+	err := aws.waitForTargetInstances(ec2Filters, ssmFilters, waitTimeout)
+
+	if err != nil {
+		log.Error(aws.ctx, err.Error())
+		return ssmtypes.Command{}, err
+	}
 
 	output, err := aws.ssmClient.SendCommand(aws.ctx, &ssm.SendCommandInput{
 		Targets:            ssmTargets,
@@ -198,7 +239,12 @@ func (aws AwsClients) RunCommand(documentName string, parameters map[string][]st
 		return ssmtypes.Command{}, err
 	}
 
-	aws.waitForCommandInvocations(*output.Command.CommandId, executionTimeout)
+	err = aws.waitForCommandInvocations(*output.Command.CommandId, executionTimeout)
+
+	if err != nil {
+		log.Error(aws.ctx, err.Error())
+		return ssmtypes.Command{}, err
+	}
 
 	aws.printCommandOutput(s3KeyPrefix, *output.Command.CommandId, s3Bucket)
 

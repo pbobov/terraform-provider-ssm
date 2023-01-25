@@ -124,7 +124,8 @@ func (clients AwsClients) waitForCommandInvocations(commandId string, timeout in
 			} else if invocation.Status == "Cancelled" || invocation.Status == "TimedOut" || invocation.Status == "Failed" {
 				log.Info(clients.ctx, fmt.Sprintf("Command %s invocation %s on instance %s.",
 					commandId, invocation.Status, *invocation.InstanceId))
-				return nil
+
+				return fmt.Errorf("command invocation %s on %s instance", strings.ToLower(string(invocation.Status)), *invocation.InstanceId)
 			}
 		}
 
@@ -137,7 +138,7 @@ func (clients AwsClients) waitForCommandInvocations(commandId string, timeout in
 
 	log.Error(clients.ctx, "Command invocations timed out.")
 
-	return errors.New("Command invocations timed out.")
+	return errors.New("command invocations timed out")
 }
 
 // Retrieves from S3 and prints outputs of the command invocations.

@@ -9,7 +9,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
-// Attributes of awstools_command resource
+// Attributes of ssm_command resource
 const (
 	attDocumentName     string = "document_name"
 	attParameters       string = "parameters"
@@ -64,7 +64,11 @@ func resourceCommandCreate(ctx context.Context, d *schema.ResourceData, m interf
 		ssmTargets = append(ssmTargets, ssmtypes.Target{Key: &key, Values: values})
 	}
 
-	aws, err := NewAwsClients(ctx)
+	extendedCtx, cancel := context.WithTimeout(ctx, time.Duration(executionTimeout)*time.Second)
+
+	defer cancel()
+
+	aws, err := NewAwsClients(extendedCtx)
 
 	if err != nil {
 		return diag.FromErr(err)

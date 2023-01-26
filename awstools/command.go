@@ -21,7 +21,7 @@ import (
 var ec2FilterInstanceId = "instance-id"
 var ec2FilterInstanceStateName = "instance-state-name"
 
-// SSM target names
+// SSM target keys
 var ssmTargetInstanceIds = "InstanceIds"
 
 var sendTimeout int32 = 600
@@ -96,7 +96,7 @@ func (clients AwsClients) waitForTargetInstances(ec2Filters []ec2types.Filter, s
 
 	log.Error(clients.ctx, "Target instances are not online.")
 
-	return errors.New("Target instances are not online.")
+	return errors.New("target instances are not online")
 }
 
 // Wait for the command invocations to complete
@@ -166,8 +166,7 @@ func (clients AwsClients) printCommandOutput(prefix string, commandId string, s3
 	keyPrefix := prefix + "/" + commandId
 
 	objects, err := s3BucketClient.ListObjectsV2(clients.ctx, &s3.ListObjectsV2Input{
-		Bucket: &s3Bucket,
-
+		Bucket:  &s3Bucket,
 		MaxKeys: 1000,
 		Prefix:  &keyPrefix,
 	})
@@ -198,9 +197,9 @@ func (clients AwsClients) printCommandOutput(prefix string, commandId string, s3
 	return nil
 }
 
-// Wait until the target EC2 instances status is online.
-// Send SSM command.
-// Wait for the command invocations to complete.
+// Waits until the target EC2 instances status is online.
+// Sends SSM command.
+// Waits for the command invocations to complete.
 // Retrieves from S3 and prints outputs of the command invocations.
 func (aws AwsClients) RunCommand(documentName string, parameters map[string][]string, ssmTargets []ssmtypes.Target, executionTimeout int, comment string, s3Bucket string, s3KeyPrefix string) (ssmtypes.Command, error) {
 	var ec2Filters []ec2types.Filter
@@ -240,16 +239,18 @@ func (aws AwsClients) RunCommand(documentName string, parameters map[string][]st
 		return ssmtypes.Command{}, err
 	}
 
-	err = aws.waitForCommandInvocations(*output.Command.CommandId, executionTimeout)
+	commandId := *output.Command.CommandId
 
-	aws.printCommandOutput(s3KeyPrefix, *output.Command.CommandId, s3Bucket)
+	err = aws.waitForCommandInvocations(commandId, executionTimeout)
+
+	aws.printCommandOutput(s3KeyPrefix, commandId, s3Bucket)
 
 	if err != nil {
 		log.Error(aws.ctx, err.Error())
 		return ssmtypes.Command{}, err
 	}
 
-	return aws.GetCommand(*output.Command.CommandId)
+	return aws.GetCommand(commandId)
 }
 
 // Retrieves SSM command info by Id.

@@ -9,6 +9,13 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
+// Resource timeouts
+var createTimeout time.Duration = time.Duration(24) * time.Hour
+var readTimeout time.Duration = time.Duration(60) * time.Second
+var updateTimeout time.Duration = time.Duration(24) * time.Hour
+var deleteTimeout time.Duration = time.Duration(60) * time.Second
+var defaultTimeout time.Duration = time.Duration(24) * time.Hour
+
 // Attributes of ssm_command resource
 const (
 	attDocumentName     string = "document_name"
@@ -64,17 +71,17 @@ func resourceCommandCreate(ctx context.Context, d *schema.ResourceData, m interf
 		ssmTargets = append(ssmTargets, ssmtypes.Target{Key: &key, Values: values})
 	}
 
-	extendedCtx, cancel := context.WithTimeout(ctx, time.Duration(executionTimeout)*time.Second)
+	extendedCtx, cancel := context.WithTimeout(ctx, time.Duration(executionTimeout+60)*time.Second)
 
 	defer cancel()
 
-	aws, err := NewAwsClients(extendedCtx)
+	clients, err := NewAwsClients(extendedCtx)
 
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	command, err := aws.RunCommand(documentName, ssmParameters, ssmTargets, executionTimeout, comment, s3Bucket, s3KeyPrefix)
+	command, err := clients.RunCommand(documentName, ssmParameters, ssmTargets, executionTimeout, comment, s3Bucket, s3KeyPrefix)
 
 	if err != nil {
 		return diag.FromErr(err)
@@ -100,13 +107,13 @@ func resourceCommandRead(ctx context.Context, d *schema.ResourceData, m interfac
 
 	commandId := d.Id()
 
-	aws, err := NewAwsClients(ctx)
+	clients, err := NewAwsClients(ctx)
 
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	command, err := aws.GetCommand(commandId)
+	command, err := clients.GetCommand(commandId)
 
 	if err != nil {
 		return diag.FromErr(err)
@@ -139,6 +146,13 @@ func resourceCommandDelete(ctx context.Context, d *schema.ResourceData, m interf
 
 func resourceCommand() *schema.Resource {
 	return &schema.Resource{
+		Timeouts: &schema.ResourceTimeout{
+			Create:  &createTimeout,
+			Read:    &readTimeout,
+			Update:  &updateTimeout,
+			Delete:  &deleteTimeout,
+			Default: &defaultTimeout,
+		},
 		CreateContext: resourceCommandCreate,
 		ReadContext:   resourceCommandRead,
 		UpdateContext: resourceCommandUpdate,

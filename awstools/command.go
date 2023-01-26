@@ -201,7 +201,7 @@ func (clients AwsClients) printCommandOutput(prefix string, commandId string, s3
 // Sends SSM command.
 // Waits for the command invocations to complete.
 // Retrieves from S3 and prints outputs of the command invocations.
-func (aws AwsClients) RunCommand(documentName string, parameters map[string][]string, ssmTargets []ssmtypes.Target, executionTimeout int, comment string, s3Bucket string, s3KeyPrefix string) (ssmtypes.Command, error) {
+func (clients AwsClients) RunCommand(documentName string, parameters map[string][]string, ssmTargets []ssmtypes.Target, executionTimeout int, comment string, s3Bucket string, s3KeyPrefix string) (ssmtypes.Command, error) {
 	var ec2Filters []ec2types.Filter
 	var ssmFilters []ssmtypes.InstanceInformationStringFilter
 
@@ -217,14 +217,14 @@ func (aws AwsClients) RunCommand(documentName string, parameters map[string][]st
 
 	ec2Filters = append(ec2Filters, ec2types.Filter{Name: &ec2FilterInstanceStateName, Values: []string{"pending", "running"}})
 
-	err := aws.waitForTargetInstances(ec2Filters, ssmFilters, waitTimeout)
+	err := clients.waitForTargetInstances(ec2Filters, ssmFilters, waitTimeout)
 
 	if err != nil {
-		log.Error(aws.ctx, err.Error())
+		log.Error(clients.ctx, err.Error())
 		return ssmtypes.Command{}, err
 	}
 
-	output, err := aws.ssmClient.SendCommand(aws.ctx, &ssm.SendCommandInput{
+	output, err := clients.ssmClient.SendCommand(clients.ctx, &ssm.SendCommandInput{
 		Targets:            ssmTargets,
 		DocumentName:       &documentName,
 		Parameters:         parameters,
@@ -235,27 +235,27 @@ func (aws AwsClients) RunCommand(documentName string, parameters map[string][]st
 	})
 
 	if err != nil {
-		log.Error(aws.ctx, err.Error())
+		log.Error(clients.ctx, err.Error())
 		return ssmtypes.Command{}, err
 	}
 
 	commandId := *output.Command.CommandId
 
-	err = aws.waitForCommandInvocations(commandId, executionTimeout)
+	err = clients.waitForCommandInvocations(commandId, executionTimeout)
 
-	aws.printCommandOutput(s3KeyPrefix, commandId, s3Bucket)
+	clients.printCommandOutput(s3KeyPrefix, commandId, s3Bucket)
 
 	if err != nil {
-		log.Error(aws.ctx, err.Error())
+		log.Error(clients.ctx, err.Error())
 		return ssmtypes.Command{}, err
 	}
 
-	return aws.GetCommand(commandId)
+	return clients.GetCommand(commandId)
 }
 
 // Retrieves SSM command info by Id.
-func (aws AwsClients) GetCommand(commandId string) (ssmtypes.Command, error) {
-	commands, err := aws.ssmClient.ListCommands(aws.ctx, &ssm.ListCommandsInput{
+func (clients AwsClients) GetCommand(commandId string) (ssmtypes.Command, error) {
+	commands, err := clients.ssmClient.ListCommands(clients.ctx, &ssm.ListCommandsInput{
 		CommandId: &commandId,
 	})
 

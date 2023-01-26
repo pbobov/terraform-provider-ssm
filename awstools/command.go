@@ -242,16 +242,14 @@ func (aws AwsClients) RunCommand(documentName string, parameters map[string][]st
 
 	err = aws.waitForCommandInvocations(*output.Command.CommandId, executionTimeout)
 
+	aws.printCommandOutput(s3KeyPrefix, *output.Command.CommandId, s3Bucket)
+
 	if err != nil {
 		log.Error(aws.ctx, err.Error())
 		return ssmtypes.Command{}, err
 	}
 
-	aws.printCommandOutput(s3KeyPrefix, *output.Command.CommandId, s3Bucket)
-
-	commandId := *output.Command.CommandId
-
-	return aws.GetCommand(commandId)
+	return aws.GetCommand(*output.Command.CommandId)
 }
 
 // Retrieves SSM command info by Id.

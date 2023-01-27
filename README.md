@@ -1,3 +1,5 @@
+[![CodeQL](https://github.com/pbobov/terraform-provider-ssm/actions/workflows/codeql.yml/badge.svg)](https://github.com/pbobov/terraform-provider-ssm/actions/workflows/codeql.yml)
+
 # SSM Terraform Provider
 
 The provider provides resources for AWS Systems Manager service not supported by "hashicorp/aws" provider.

@@ -13,26 +13,29 @@ Before sending the command, the resource waits for all the target EC2 instances 
 
 After the command invocations are completed, the resource retrieves the command outputs from the output S3 bucket and logs them to the terraform log as an INFO level message.
 
-> Note: The SSM commands invoked by the resource must be idempotent to conform with terraform's declarative design.
-
 ## Example Usage
 
 ```terraform
-resource "ssm_command" "test" {
-  document_name = "AWS-InstallMissingWindowsUpdates"
+resource "ssm_command" "greeting" {
+  document_name = "AWS-RunShellScript"
   parameters {
-    name   = "UpdateLevel"
-    values = ["Important"]
+    name   = "commands"
+    values = ["echo 'Hello World!'"]
+  }
+  destroy_document_name = "AWS-RunShellScript"
+  destroy_parameters {
+    name   = "commands"
+    values = ["echo 'Goodbye World.'"]
   }
   targets {
     key    = "InstanceIds"
-    values = ["i-xxxxxxxxxxxx"]
+    values = [aws_instance.world.id]
   }
-  comment           = "Install Microsoft Windows updates."
+  comment           = "Greetings from SSM!"
   execution_timeout = 600
   output_location {
-    s3_bucket_name = "testbucket"
-    s3_key_prefix  = "updates"
+    s3_bucket_name = aws_s3_bucket.output.bucket
+    s3_key_prefix  = "greetings"
   }
 }
 ```
@@ -41,42 +44,41 @@ resource "ssm_command" "test" {
 
 ### Required
 
-- `document_name` (String) - The name of the SSM document to apply.
-- `output_location` (Block) - An output location block. Output Location is documented below.
-- `parameters` (Block List) - A block of arbitrary string parameters to pass to the SSM document.
-- `targets` (Block List) - A block containing the targets of the SSM command invocations. Targets are documented below.
+- `document_name` (String) - Name of SSM command document to run on the resource creation.
+- `parameters` (Block List) - Block of arbitrary string parameters to pass to the SSM document.
+- `targets` (Block List) - Block containing the targets of the SSM command invocations. Targets are documented below.
 
 ### Optional
 
-- `comment` (String) - The user-specified information about the command, such as a brief description of what the command should do.
-- `execution_timeout` (Number) - The command invocation timeout in seconds. Default timeout is 3600 seconds.
+- `comment` (String) - User-specified information about the command, such as a brief description of what the command should do.
+- `execution_timeout` (Number) - Command invocation timeout in seconds. Default timeout is 3600 seconds.
+- `destroy_document_name` (String) - Name of SSM command document to run on the resource destruction. If not set, no SSM command is executed on the resource destruction.
+- `destroy_parameters` (Block List) - Block of arbitrary string parameters to pass to the SSM document on the resource destruction.
+- `output_location` (Block) - SSM command output location settings. If not specified, the SSM commands use default output location. Output_location is documented below.
 
 ### Read-Only
 
 - `id` (String) The SSM command Id.
-- `requested_time` (String) - The date and time the command was requested.
-- `status` (String) - The status of the SSM command.
+- `requested_time` (String) - Date and time the command was requested.
+- `status` (String) - Status of the SSM command invocations.
 
 ### Nested Schema for `parameters`
 
-Required:
+Parameters blocks specify names and values of SSM command parameters:
 
-- `name` (String) - The SSM document parameter name.
-- `values` (List of String) - A list of parameter values.
+- `name` (String) - SSM document parameter name.
+- `values` (List of String) - List of parameter values.
 
 ### Nested Schema for `targets`
 
-Targets specify what instance IDs or tags to apply the document to and has these keys:
+Targets blocks specify what instance IDs or tags to apply the document to and has these keys:
 
 - `key` (String) - Either `InstanceIds` or `tag:Tag Name` to specify an EC2 tag.
-- `values` (List of String) - A list of instance IDs or tag values.
+- `values` (List of String) - List of instance IDs or tag values.
 
 ### Nested Schema for `output_location`
 
-Required:
-
-- `s3_bucket_name` (String) - The S3 bucket name.
-
 Optional:
 
-- `s3_key_prefix` (String) - The S3 bucket prefix. Results stored in the root if not configured.
+- `s3_bucket_name` (String) - Output S3 bucket name. If not specified, the SSM commands use default output location.
+- `s3_key_prefix` (String) - S3 objects key prefix.

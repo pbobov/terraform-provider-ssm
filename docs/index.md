@@ -18,7 +18,7 @@ Do not keep your authentication password in HCL for production environments, use
   required_providers {
     ssm = {
       source  = "pbobov/ssm"
-      version = "~> 0.1.0"
+      version = "~> 0.2"
     }
   }
 ```

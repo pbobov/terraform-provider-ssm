@@ -100,8 +100,8 @@ func (clients AwsClients) waitForTargetInstances(ec2Filters []ec2types.Filter, s
 }
 
 // Wait for the command invocations to complete
-func (clients AwsClients) waitForCommandInvocations(commandId string, timeout int) error {
-	for i := 0; i < timeout/sleepTime; i++ {
+func (clients AwsClients) waitForCommandInvocations(commandId string, timeout *int) error {
+	for i := 0; i < *timeout/sleepTime; i++ {
 		output, err := clients.ssmClient.ListCommandInvocations(clients.ctx, &ssm.ListCommandInvocationsInput{
 			CommandId: &commandId,
 		})
@@ -142,9 +142,14 @@ func (clients AwsClients) waitForCommandInvocations(commandId string, timeout in
 }
 
 // Retrieves from S3 and prints outputs of the command invocations.
-func (clients AwsClients) printCommandOutput(prefix string, commandId string, s3Bucket string) error {
+func (clients AwsClients) printCommandOutput(prefix *string, commandId string, s3Bucket *string) error {
+	if s3Bucket == nil || *s3Bucket == "" {
+		log.Info(clients.ctx, "The output S3 bucket is not specified for ssm_command resource.")
+		return nil
+	}
+
 	location, err := clients.s3Client.GetBucketLocation(clients.ctx, &s3.GetBucketLocationInput{
-		Bucket: &s3Bucket,
+		Bucket: s3Bucket,
 	})
 
 	if err != nil {
@@ -163,10 +168,13 @@ func (clients AwsClients) printCommandOutput(prefix string, commandId string, s3
 	cfg.Region = string(location.LocationConstraint)
 	s3BucketClient := s3.NewFromConfig(cfg)
 
-	keyPrefix := prefix + "/" + commandId
+	keyPrefix := commandId
+	if prefix != nil {
+		keyPrefix = *prefix + "/" + commandId
+	}
 
 	objects, err := s3BucketClient.ListObjectsV2(clients.ctx, &s3.ListObjectsV2Input{
-		Bucket:  &s3Bucket,
+		Bucket:  s3Bucket,
 		MaxKeys: 1000,
 		Prefix:  &keyPrefix,
 	})
@@ -179,7 +187,7 @@ func (clients AwsClients) printCommandOutput(prefix string, commandId string, s3
 	if objects.Contents != nil {
 		for _, key := range objects.Contents {
 			object, err := s3BucketClient.GetObject(clients.ctx, &s3.GetObjectInput{
-				Bucket: &s3Bucket,
+				Bucket: s3Bucket,
 				Key:    key.Key,
 			})
 
@@ -201,7 +209,7 @@ func (clients AwsClients) printCommandOutput(prefix string, commandId string, s3
 // Sends SSM command.
 // Waits for the command invocations to complete.
 // Retrieves from S3 and prints outputs of the command invocations.
-func (clients AwsClients) RunCommand(documentName string, parameters map[string][]string, ssmTargets []ssmtypes.Target, executionTimeout int, comment string, s3Bucket string, s3KeyPrefix string) (ssmtypes.Command, error) {
+func (clients AwsClients) RunCommand(documentName *string, parameters map[string][]string, ssmTargets []ssmtypes.Target, executionTimeout *int, comment *string, s3Bucket *string, s3KeyPrefix *string) (ssmtypes.Command, error) {
 	var ec2Filters []ec2types.Filter
 	var ssmFilters []ssmtypes.InstanceInformationStringFilter
 
@@ -226,12 +234,12 @@ func (clients AwsClients) RunCommand(documentName string, parameters map[string]
 
 	output, err := clients.ssmClient.SendCommand(clients.ctx, &ssm.SendCommandInput{
 		Targets:            ssmTargets,
-		DocumentName:       &documentName,
+		DocumentName:       documentName,
 		Parameters:         parameters,
-		Comment:            &comment,
+		Comment:            comment,
 		TimeoutSeconds:     &sendTimeout,
-		OutputS3BucketName: &s3Bucket,
-		OutputS3KeyPrefix:  &s3KeyPrefix,
+		OutputS3BucketName: s3Bucket,
+		OutputS3KeyPrefix:  s3KeyPrefix,
 	})
 
 	if err != nil {

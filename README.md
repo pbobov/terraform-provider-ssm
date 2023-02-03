@@ -1,3 +1,4 @@
+[![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/pbobov/terraform-provider-ssm?display_name=tag&sort=semver)](https://github.com/pbobov/terraform-provider-ssm/releases/latest)
 [![CodeQL](https://github.com/pbobov/terraform-provider-ssm/actions/workflows/codeql.yml/badge.svg)](https://github.com/pbobov/terraform-provider-ssm/actions/workflows/codeql.yml)
 
 # SSM Terraform Provider

@@ -50,7 +50,9 @@ func getParameters(d *schema.ResourceData, parametersKey string) map[string][]st
 		name := parameter[attName].(string)
 		var values []string
 		for _, value := range parameter[attValues].([]interface{}) {
-			values = append(values, value.(string))
+			if value != nil {
+				values = append(values, value.(string))
+			}
 		}
 		ssmParameters[name] = values
 	}

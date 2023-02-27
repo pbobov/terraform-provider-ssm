@@ -29,6 +29,8 @@ var sendTimeout int32 = 600
 const waitTimeout = 600
 const sleepTime = 10
 
+const maxLogMsgSize = 65536
+
 type AwsClients struct {
 	ctx       context.Context
 	ec2Client *ec2.Client
@@ -196,7 +198,14 @@ func (clients AwsClients) printCommandOutput(prefix *string, commandId string, s
 			} else {
 				bytes, err := io.ReadAll(object.Body)
 				if err == nil {
-					log.Info(clients.ctx, fmt.Sprintf("\n*** %s ***\n%s", *key.Key, string(bytes)))
+					log.Info(clients.ctx, fmt.Sprintf("\n*** %s ***", *key.Key))
+					msg := string(bytes)
+					// Slice the message into 64KB pieces.
+					n := len(msg) / maxLogMsgSize
+					for i := 0; i < n; i++ {
+						log.Info(clients.ctx, msg[i*maxLogMsgSize:(i+1)*maxLogMsgSize])
+					}
+					log.Info(clients.ctx, msg[n*maxLogMsgSize:])
 				}
 			}
 		}

@@ -280,5 +280,9 @@ func (clients AwsClients) GetCommand(commandId string) (ssmtypes.Command, error)
 		return ssmtypes.Command{}, err
 	}
 
+	if len(commands.Commands) == 0 {
+		return ssmtypes.Command{}, nil
+	}
+
 	return commands.Commands[0], nil
 }

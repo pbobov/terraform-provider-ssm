@@ -166,6 +166,11 @@ func resourceCommandRead(ctx context.Context, d *schema.ResourceData, m interfac
 		return diag.FromErr(err)
 	}
 
+	if command.CommandId == nil {
+		d.SetId("")
+		return diags
+	}
+
 	if err := d.Set(attStatus, command.Status); err != nil {
 		return diag.FromErr(err)
 	}
